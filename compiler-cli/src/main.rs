@@ -20,7 +20,8 @@
     clippy::inefficient_to_string,
     clippy::linkedlist,
     clippy::macro_use_imports,
-    clippy::option_option,
+    // Used for optional cli args that take optional values
+    // clippy::option_option,
     clippy::verbose_file_reads,
     clippy::unnested_or_patterns,
     rust_2018_idioms,
@@ -158,6 +159,13 @@ pub struct NewOptions {
         default_value = "lib"
     )]
     pub template: new::Template,
+
+    #[structopt(
+        long,
+        possible_values = &new::Docker::VARIANTS,
+        case_insensitive = true,
+    )]
+    pub docker: Option<Option<new::Docker>>,
 }
 
 #[derive(StructOpt, Debug)]

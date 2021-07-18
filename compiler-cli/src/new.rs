@@ -25,6 +25,14 @@ pub enum Template {
     Escript,
 }
 
+#[derive(Debug, Serialize, Deserialize, Display, EnumString, EnumVariantNames, Clone, Copy)]
+#[strum(serialize_all = "kebab_case")]
+pub enum Docker {
+    Default,
+    Slim,
+    Alpine,
+}
+
 #[derive(Debug)]
 pub struct Creator {
     root: PathBuf,
@@ -73,6 +81,7 @@ impl Creator {
                 self.erlang_app_src()?;
                 self.src_module()?;
                 self.test_module()?;
+                self.docker_compose()?;
             }
 
             Template::App => {
@@ -86,6 +95,7 @@ impl Creator {
                 self.src_module()?;
                 self.src_application_module()?;
                 self.test_module()?;
+                self.docker_compose()?;
             }
 
             Template::Escript => {
@@ -97,6 +107,7 @@ impl Creator {
                 self.erlang_app_src()?;
                 self.src_escript_module()?;
                 self.test_module()?;
+                self.docker_compose()?;
             }
 
             Template::GleamLib => {
@@ -106,6 +117,7 @@ impl Creator {
                 self.gleam_gleam_toml()?;
                 self.src_module()?;
                 self.gleam_test_module()?;
+                self.docker_compose()?;
             }
         }
 
@@ -299,7 +311,7 @@ rebar3.crashdump
 {description}
 
 ## Quick start
-
+{docker_run}
 ```sh
 # Run the eunit tests
 rebar3 eunit
@@ -309,7 +321,8 @@ rebar3 shell
 ```
 "#,
                 name = self.project_name,
-                description = self.options.description
+                description = self.options.description,
+                docker_run = self.docker_run()
             ),
         )
     }
@@ -323,7 +336,7 @@ rebar3 shell
 {description}
 
 ## Quick start
-
+{docker_run}
 ```sh
 # Run the eunit tests
 rebar3 eunit
@@ -337,7 +350,8 @@ _build/default/bin/{name}
 ```
 "#,
                 name = self.project_name,
-                description = self.options.description
+                description = self.options.description,
+                docker_run = self.docker_run()
             ),
         )
     }
@@ -351,7 +365,7 @@ _build/default/bin/{name}
 {description}
 
 ## Quick start
-
+{docker_run}
 ```sh
 # Run the eunit tests
 gleam eunit
@@ -362,7 +376,8 @@ gleam shell
 ```
 "#,
                 name = self.project_name,
-                description = self.options.description
+                description = self.options.description,
+                docker_run = self.docker_run()
             ),
         )
     }
@@ -376,7 +391,7 @@ gleam shell
 {description}
 
 ## Quick start
-
+{docker_run}
 ```sh
 # Run the eunit tests
 rebar3 eunit
@@ -397,7 +412,8 @@ this package can be installed by adding `{name}` to your `rebar.config` dependen
 ```
 "#,
                 name = self.project_name,
-                description = self.options.description
+                description = self.options.description,
+                docker_run = self.docker_run()
             ),
         )
     }
@@ -526,6 +542,44 @@ pub fn hello_world_test() {{
             ),
         )
     }
+
+    fn docker_compose(&self) -> Result<()> {
+        match self.options.docker {
+            Some(choice) => {
+                let docker_type = match choice.unwrap_or(Docker::Default) {
+                    Docker::Default => "",
+                    Docker::Slim => "-slim",
+                    Docker::Alpine => "-alpine",
+                };
+                write(
+                    self.root.join("docker-compose.yml"),
+                    &format!(
+                        r#"version: "3"
+    
+services:
+  {name}:
+    image: ghcr.io/gleam-lang/gleam:v{version}-erlang{docker_type}
+    volumes:
+      - .:/opt/app
+    working_dir: /opt/app
+    network_mode: host
+    "#,
+                        name = self.project_name,
+                        version = self.gleam_version,
+                        docker_type = docker_type
+                    ),
+                )
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn docker_run(&self) -> String {
+        format!(
+            "\n```sh\ndocker-compose run {} bash\n```\n",
+            self.project_name
+        )
+    }
 }
 
 pub fn create(options: NewOptions, version: &'static str) -> Result<()> {
@@ -546,6 +600,12 @@ pub fn create(options: NewOptions, version: &'static str) -> Result<()> {
         format!("\tcd {}\n", creator.options.project_root)
     };
 
+    let docker_run = if options.docker.is_none() {
+        "".to_string()
+    } else {
+        format!("\tdocker-compose run {} bash\n", creator.project_name)
+    };
+
     let test_command = match &creator.options.template {
         Template::Lib | Template::App | Template::Escript => "rebar3 eunit",
         Template::GleamLib => "gleam eunit",
@@ -556,9 +616,9 @@ pub fn create(options: NewOptions, version: &'static str) -> Result<()> {
 Your Gleam project {} has been successfully created.
 The project can be compiled and tested by running these commands:
 
-{}\t{}
+{}{}\t{}
 ",
-        creator.project_name, cd_folder, test_command,
+        creator.project_name, cd_folder, docker_run, test_command,
     );
     Ok(())
 }
